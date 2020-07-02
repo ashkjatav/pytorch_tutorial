@@ -2,12 +2,18 @@ import torch
 import torch.nn as nn
 import seaborn as sns
 import numpy as np
+import os, random
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 import time
+seed = 42
+os.environ['PYTHONHASHSEED'] = str(seed)
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
 
-# start = time.time()
+start = time.time()
 flights = sns.load_dataset("flights")
 
 #%%
@@ -37,7 +43,7 @@ train_norm = torch.FloatTensor(train_norm).view(-1)
 #%%
 window_size = 12
 
-output_size = 1
+output_size = 6
 def create_windows_labels(data, window, output_size):
     input_seq = []
     L = len(data)
@@ -51,16 +57,16 @@ train_seq = create_windows_labels(train_norm, window_size, output_size)
 #%%
 
 class LSTM(nn.Module):
-    def __init__(self, input_size=1, hidden_layer_size=200, output_size=output_size):
+    def __init__(self, input_size=1, hidden_layer_size=100, output_size=output_size):
         super().__init__()
         self.hidden_layer_size = hidden_layer_size
 
-        self.lstm = nn.LSTM(input_size, hidden_layer_size)
+        self.lstm = nn.LSTM(input_size, hidden_layer_size, bidirectional=True)
 
-        self.linear = nn.Linear(hidden_layer_size, output_size)
+        self.linear = nn.Linear(hidden_layer_size*2, output_size)
 
-        self.hidden_cell = (torch.zeros(1, 1, self.hidden_layer_size),
-                            torch.zeros(1 ,1, self.hidden_layer_size))
+        self.hidden_cell = (torch.zeros(2, 1, self.hidden_layer_size),
+                            torch.zeros(2 ,1, self.hidden_layer_size))
 
     def forward(self, input_seq):
         lstm_out, self.hidden_cell = self.lstm(input_seq.view(len(input_seq), 1, -1), self.hidden_cell)
@@ -70,7 +76,7 @@ class LSTM(nn.Module):
 #%%
 model = LSTM()
 loss_function = nn.MSELoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0075)
 print(model)
 #%%
 
@@ -79,8 +85,8 @@ epochs = 300
 for i in range(epochs):
     for seq, labels in train_seq:
         optimizer.zero_grad()
-        model.hidden_cell = (torch.zeros(1, 1, model.hidden_layer_size),
-                             torch.zeros(1, 1, model.hidden_layer_size))
+        model.hidden_cell = (torch.zeros(2, 1, model.hidden_layer_size),
+                             torch.zeros(2, 1, model.hidden_layer_size))
         y_pred = model(seq)
 
         loss = loss_function(y_pred, labels)
@@ -90,10 +96,10 @@ for i in range(epochs):
     if i%25 == 0:
         print(f'epoch: {i:3} loss: {loss.item():10.8f}')
 
-# print(f'epoch: {i:3} loss: {loss.item():10.10f}')
+print(f'epoch: {i:3} loss: {loss.item():10.10f}')
 
 #%%
-fut_pred = 24
+fut_pred = 36
 test_inputs = train_norm[-12:].tolist()
 
 #%%
@@ -101,8 +107,8 @@ test_inputs = train_norm[-12:].tolist()
 for i in range(fut_pred//output_size):
     seq = torch.FloatTensor(test_inputs[-window_size:])
     with torch.no_grad():
-        model.hidden_cell = (torch.zeros(1, 1, model.hidden_layer_size),
-                             torch.zeros(1, 1, model.hidden_layer_size))
+        model.hidden_cell = (torch.zeros(2, 1, model.hidden_layer_size),
+                             torch.zeros(2, 1, model.hidden_layer_size))
         test_inputs += model(seq).data.numpy().tolist()
 
 #%%
@@ -117,10 +123,11 @@ plt.xlabel('Months')
 plt.ylabel('Number of Passengers')
 plt.title('Months vs Passengers')
 plt.grid(True)
-plt.plot(flights['passengers'])
-plt.plot(np.arange(132, 156), actual_predictions)
+plt.plot(flights['passengers'], label='True')
+plt.plot(np.arange(132, 168), actual_predictions, label='Predicted')
+plt.legend()
 plt.show()
 
-# end = time.time()
+end = time.time()
 
-# print("Time to run the code: " + str(end-start) + " sec")
+print("Time to run the code: " + str(end-start) + " sec")
